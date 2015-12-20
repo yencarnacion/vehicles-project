@@ -1,0 +1,67 @@
+---
+- name: Deploy vehicles
+  hosts: vehicles
+  vars:
+    proj_name: vehicles-project
+    database_user: "{{ proj_name }}"
+    database_name: "{{ proj_name }}"
+    zipuri: http://www.webninjapr.com/data/vehicles.csv.zip
+    locale: en_US.UTF-8
+  vars_files:
+    - secrets.yml
+  pre_tasks:
+    - name: install apt packages
+      apt: pkg={{ item }} update_cache=yes cache_valid_time=3600
+      sudo: True
+      with_items:
+        - git
+        - python-pip
+        - python-virtualenv
+        - python-psycopg2
+        - python-apt
+        - unzip
+  roles:
+    - role: ansible-postgres
+      postgres_username: "{{ database_user }}"
+      postgres_password: "{{ db_pass }}"
+      sudo: True
+    - role: csv2Postgres
+      sudo: True
+    - role: ansiblebit.oracle-java
+      oracle_java_set_as_default: yes
+      sudo: True
+#    - role: tomcat
+#      http_port: 8080
+#      https_port: 8443
+#      sudo: True
+  tasks:
+    - name: clone git repo
+      git: >
+        repo=https://github.com/yencarnacion/vehicles
+        dest=/home/vagrant/vehicles
+        force=yes
+        accept_hostkey=yes
+    - name: create /home/vagrant/bin
+      file: > 
+        path=/home/vagrant/bin/
+        state=directory 
+        mode=0755 
+        recurse=yes 
+        owner=vagrant 
+        group=vagrant
+    - name: download lein
+      get_url: >
+         dest=/home/vagrant/bin
+         url=https://raw.github.com/technomancy/leiningen/stable/bin/lein
+    - name: make leiningen executable
+      file: path=/home/vagrant/bin/lein state=touch mode=0755
+    - name: compile vehicles
+      shell: /home/vagrant/bin/lein uberjar
+      args:
+        chdir: /home/vagrant/vehicles
+    - name: copy upstart job
+      template: src=templates/vehicles.conf.j2 dest=/etc/init/vehicles.conf owner=root group=root mode=0644
+      sudo: True
+    - name: start job
+      command: start vehicles
+      sudo: True
